@@ -20,3 +20,19 @@ def accuracy(output, target, topk=(1,)):
             correct_k = correct[:k].reshape(-1).float().sum(0, keepdim=True)
             res.append(correct_k.mul_(100.0 / batch_size))
         return res
+
+def epoch_log(object): 
+    """Keeps track of the scores during an epoch and calculates the average"""
+    def __init__(self): 
+        self.initialize() 
+
+    def initialize(self):
+        self.value = 0 
+        self.avg = 0 
+        self.sum = 0 
+        self.count = 0 
+    def update(self, value, n=1):
+        self.value = value
+        self.sum += value * n
+        self.count += n
+        self.avg = self.sum / self.count

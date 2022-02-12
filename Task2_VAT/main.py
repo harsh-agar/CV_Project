@@ -3,13 +3,17 @@ import math
 
 from dataloader import get_cifar10, get_cifar100
 from vat        import VATLoss
-from utils      import accuracy
+from utils      import accuracy, epoch_log
 from model.wrn  import WideResNet
 
 import torch
 import torch.optim as optim
+import torch.nn as nn
 from torch.utils.data   import DataLoader
 
+import warnings
+
+warnings.filterwarnings("ignore")
 
 def main(args):
     if args.dataset == "cifar10":
@@ -44,9 +48,17 @@ def main(args):
     ############################################################################
     # TODO: SUPPLY your code
     ############################################################################
+
+    optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum)
     
     for epoch in range(args.epoch):
         for i in range(args.iter_per_epoch):
+
+            if i % args.log_interval == 0:
+                ce_losses = epoch_log()
+                vat_losses = epoch_log()
+                accuracies = epoch_log()
+
             try:
                 x_l, y_l    = next(labeled_loader)
             except StopIteration:
@@ -70,6 +82,30 @@ def main(args):
             ####################################################################
             # TODO: SUPPLY you code
             ####################################################################
+
+            optimizer.zero_grad()
+            vatLoss = VATLoss(xi=args.xi, eps=args.eps, ip=args.ip)
+
+            vat_loss = vatLoss(model, x_ul)
+            preds = model(x_l)
+            classification_loss = nn.CrossEntropyLoss(preds, y_l)
+            loss = classification_loss + args.alpha * vat_loss
+            loss.backward()
+            optimizer.step()
+
+            acc = accuracy(preds, y_l)
+
+            ce_losses.update(classification_loss.item(), x_l.shape[0])
+            vat_losses.update(loss.item(), x_ul.shape[0])
+            accuracies.update(acc.item(), x_l.shape[0])
+
+            if i % args.log_interval == 0:
+                print(f'\nEpoch: {epoch}\t'
+                f'\nIteration: {i}\t'
+                f'CrossEntropyLoss {ce_losses.val:.4f} ({ce_losses.avg:.4f})\t'
+                f'VATLoss {vat_losses.val:.4f} ({vat_losses.avg:.4f})\t'
+                f'Accuracy {accuracies.val:.3f} ({accuracies.avg:.3f})')
+
 
 
 
@@ -114,10 +150,13 @@ if __name__ == "__main__":
                         help="VAT epsilon parameter") 
     parser.add_argument("--vat-iter", default=1, type=int, 
                         help="VAT iteration parameter") 
+    parser.add_argument('--log-interval', type=int, default=100,
+                        help='interval for logging training status')
     # Add more arguments if you need them
     # Describe them in help
     # You can (and should) change the default values of the arguments
     
     args = parser.parse_args()
+
 
     main(args)
