@@ -1,5 +1,7 @@
 import argparse
 import math
+from tqdm import tqdm
+import warnings
 
 from dataloader import get_cifar10, get_cifar100
 from utils      import accuracy
@@ -9,7 +11,9 @@ from model.wrn  import WideResNet
 import torch
 import torch.optim as optim
 from torch.utils.data   import DataLoader
+import torch.nn as nn
 
+warnings.filterwarnings("ignore")
 
 def main(args):
     if args.dataset == "cifar10":
@@ -44,10 +48,14 @@ def main(args):
     ############################################################################
     # TODO: SUPPLY your code
     ############################################################################
-    
+    criterion = nn.CrossEntropyLoss()
+    optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum)
+
     for epoch in range(args.epoch):
         model.train()
-        for i in range(args.iter_per_epoch):
+        running_loss_train = 0.0
+        for i in tqdm(range(args.iter_per_epoch)):
+
             try:
                 x_l, y_l    = next(labeled_loader)
             except StopIteration:
@@ -65,9 +73,35 @@ def main(args):
                                             shuffle = True, 
                                             num_workers=args.num_workers))
                 x_ul, _     = next(unlabeled_loader)
-            
+
             x_l, y_l    = x_l.to(device), y_l.to(device)
             x_ul        = x_ul.to(device)
+
+            optimizer.zero_grad()
+
+            o_l = model(x_l)
+            loss = criterion(o_l, y_l)
+            loss.backward()
+            optimizer.step()
+
+            running_loss_train += loss.item()
+
+        print('[%d, %5d] loss: %.3f' %
+                (epoch + 1, i + 1, running_loss_train / 2000))
+        # train_loss.append(running_loss_train / 2000)
+        running_loss_train = 0.0
+
+        # with torch.no_grad():
+        #     running_loss_test = 0.0
+        #     for data in test_loader:
+        #         images, labels = data
+        #         outputs = model(images)
+        #         _, predicted = torch.max(outputs.data, 1)
+        #         optimizer.zero_grad()
+        #         loss_test = criterion(outputs, labels)
+        #         running_loss_test += loss_test.item()
+        #     test_loss.append(running_loss_test/2500)
+
             ####################################################################
             # TODO: SUPPLY your code
             ####################################################################
@@ -92,13 +126,13 @@ if __name__ == "__main__":
                         help="Weight decay")
     parser.add_argument("--expand-labels", action="store_true", 
                         help="expand labels to fit eval steps")
-    parser.add_argument('--train-batch', default=64, type=int,
+    parser.add_argument('--train-batch', default=512, type=int,
                         help='train batchsize')
-    parser.add_argument('--test-batch', default=64, type=int,
+    parser.add_argument('--test-batch', default=512, type=int,
                         help='train batchsize')
-    parser.add_argument('--total-iter', default=1024*512, type=int,
+    parser.add_argument('--total-iter', default=128*512, type=int,
                         help='total number of iterations to run')
-    parser.add_argument('--iter-per-epoch', default=1024, type=int,
+    parser.add_argument('--iter-per-epoch', default=128, type=int,
                         help="Number of iterations to run per epoch")
     parser.add_argument('--num-workers', default=1, type=int,
                         help="Number of workers to launch during training")
