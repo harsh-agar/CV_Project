@@ -56,7 +56,7 @@ def main(args):
     optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum)
 
     x_t = torch.empty(0, 3, 32, 32).to(device)
-    y_t = torch.empty(0).to(device)
+    y_t = torch.empty(0).to(device).int()
     
     curr_use_data = 'labelled'
     
@@ -65,22 +65,22 @@ def main(args):
     model_last_path = Path(args.model_wt_path) / Path("last_trained.h5")
 
     last_loss_train = 9999999999999.9
-    last_model = 0
+    start_model = 0
     best_model = 0
         
     if os.path.exists(model_txt_path):
         with open(model_txt_path, "r") as f:
             txt = f.read()
-        last_model = int(re.search('Last model epoch: (.*)\n', txt).group(1))
+        start_model = int(re.search('Last model epoch: (.*)\n', txt).group(1)) + 1
         best_model = int(re.search('Best model epoch: (.*)\n', txt).group(1))
         model.load_state_dict(torch.load(model_last_path))
 
-    for epoch in range(last_model, args.epoch):
+    for epoch in range(start_model, args.epoch):
         model.train()
         running_loss_train = 0.0
 
         x_t = torch.empty(0, 3, 32, 32).to(device)
-        y_t = torch.empty(0).to(device)
+        y_t = torch.empty(0).to(device).int()
 
         if epoch > 10:    
             for unlab_load in unlabeled_loader:
@@ -88,9 +88,8 @@ def main(args):
 
                 x_ul = x_ul.to(device)
                 o_ul = model(x_ul)
-
                 x_t = torch.cat((x_t, x_ul[torch.where(torch.max(o_ul.softmax(dim=1), axis=1)[0] > 0.95)[0]]))
-                y_t = torch.cat((y_t, torch.where(torch.max(o_ul.softmax(dim=1), axis=1)[0] > 0.95)[0]))
+                y_t = torch.cat((y_t, o_ul.softmax(dim=1).max(dim=1)[1][torch.where(torch.max(o_ul.softmax(dim=1), axis=1)[0] > 0.95)[0]]))
 
         for i in tqdm(range(args.iter_per_epoch)):
             
@@ -102,7 +101,7 @@ def main(args):
 
             except StopIteration:
                 if curr_use_data == 'labelled' and y_t.shape[0] != 0:
-                        labeled_loader      = iter(DataLoader((x_t, y_t), batch_size = args.train_batch, 
+                        labeled_loader      = iter(DataLoader(list(zip(x_t, y_t)), batch_size = args.train_batch, 
                                                     shuffle = True, 
                                                     num_workers=args.num_workers))
                         curr_use_data = 'X_t'
@@ -126,7 +125,7 @@ def main(args):
             running_loss_train += loss.item()
 
         print('[epoch = %d] loss: %.3f' %
-                (epoch + 1, running_loss_train / args.iter_per_epoch))
+                (epoch, running_loss_train / args.iter_per_epoch))
         # train_loss.append(running_loss_train / 2000)
         
         model_last_path = Path(args.model_wt_path) / Path("last_trained.h5")
@@ -146,7 +145,6 @@ def main(args):
         with open(model_txt_path, "w+") as f:
             f.write("Best model epoch: %d\n" % (best_model))
             f.write("Last model epoch: %d\n" % (epoch))
-        print(1)
 
         # with torch.no_grad():
         #     running_loss_test = 0.0
@@ -189,15 +187,15 @@ if __name__ == "__main__":
                         help="Weight decay")
     parser.add_argument("--expand-labels", action="store_true", 
                         help="expand labels to fit eval steps")
-    parser.add_argument('--train-batch', default=256, type=int,
+    parser.add_argument('--train-batch', default=256, type=int, #512
                         help='train batchsize')
-    parser.add_argument('--test-batch', default=256, type=int,
+    parser.add_argument('--test-batch', default=512, type=int,
                         help='train batchsize')
     parser.add_argument('--total-iter', default=128*512, type=int,
                         help='total number of iterations to run')
     parser.add_argument('--iter-per-epoch', default=128, type=int,
                         help="Number of iterations to run per epoch")
-    parser.add_argument('--num-workers', default=2, type=int,
+    parser.add_argument('--num-workers', default=0, type=int, #4
                         help="Number of workers to launch during training")
     parser.add_argument('--threshold', type=float, default=0.95,
                         help='Confidence Threshold for pseudo labeling')
