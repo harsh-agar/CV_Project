@@ -84,7 +84,7 @@ def main(args):
             ####################################################################
 
             optimizer.zero_grad()
-            vatLoss = VATLoss(xi=args.xi, eps=args.eps, ip=args.ip)
+            vatLoss = VATLoss(args)
 
             vat_loss = vatLoss(model, x_ul)
             preds = model(x_l)
