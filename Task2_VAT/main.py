@@ -1,15 +1,22 @@
 import argparse
 import math
+from xmlrpc.client import boolean
+from tqdm import tqdm
+import warnings
+import os
+from pathlib import Path
+import re
 
 from dataloader import get_cifar10, get_cifar100
-from vat        import VATLoss
 from utils      import accuracy, epoch_log
+
 from model.wrn  import WideResNet
+from vat import VATLoss
 
 import torch
 import torch.optim as optim
-import torch.nn as nn
 from torch.utils.data   import DataLoader
+import torch.nn as nn
 
 import warnings
 
@@ -48,10 +55,22 @@ def main(args):
     ############################################################################
     # TODO: SUPPLY your code
     ############################################################################
-
+    
+    model_txt_path  = Path(args.model_wt_path) / Path("epoch_info.txt")
+    model_last_path = Path(args.model_wt_path) / Path("last_trained.h5")
+    
+    if os.path.exists(model_txt_path):
+      with open(model_txt_path, "r") as f:
+          txt = f.read()
+      start_model = int(re.search('Last model epoch: (.*)\n', txt).group(1)) + 1
+      best_model = int(re.search('Best model epoch: (.*)\n', txt).group(1))
+      model.load_state_dict(torch.load(model_last_path))
+    
+    criterion = nn.CrossEntropyLoss()
     optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum)
     
     for epoch in range(args.epoch):
+        last_loss = 999999999.9
         for i in range(args.iter_per_epoch):
 
             if i % args.log_interval == 0:
@@ -84,11 +103,11 @@ def main(args):
             ####################################################################
 
             optimizer.zero_grad()
-            vatLoss = VATLoss(xi=args.xi, eps=args.eps, ip=args.ip)
+            vatLoss = VATLoss(args)
 
             vat_loss = vatLoss(model, x_ul)
             preds = model(x_l)
-            classification_loss = nn.CrossEntropyLoss(preds, y_l)
+            classification_loss = criterion(preds.softmax(dim=1), y_l)
             loss = classification_loss + args.alpha * vat_loss
             loss.backward()
             optimizer.step()
@@ -97,14 +116,32 @@ def main(args):
 
             ce_losses.update(classification_loss.item(), x_l.shape[0])
             vat_losses.update(loss.item(), x_ul.shape[0])
-            accuracies.update(acc.item(), x_l.shape[0])
+            accuracies.update(acc[0].item(), x_l.shape[0])
 
             if i % args.log_interval == 0:
                 print(f'\nEpoch: {epoch}\t'
                 f'\nIteration: {i}\t'
-                f'CrossEntropyLoss {ce_losses.val:.4f} ({ce_losses.avg:.4f})\t'
-                f'VATLoss {vat_losses.val:.4f} ({vat_losses.avg:.4f})\t'
-                f'Accuracy {accuracies.val:.3f} ({accuracies.avg:.3f})')
+                f'CrossEntropyLoss {ce_losses.value:.4f} ({ce_losses.avg:.4f})\t'
+                f'VATLoss {vat_losses.value:.4f} ({vat_losses.avg:.4f})\t'
+                f'Accuracy {accuracies.value:.3f} ({accuracies.avg:.3f})')
+        
+        model_last_path = Path(args.model_wt_path) / Path("last_trained.h5")
+        model_wts_path  = Path(args.model_wt_path) / Path(f"epoch_{epoch}_of_{args.epoch}.h5")
+        model_txt_path  = Path(args.model_wt_path) / Path("epoch_info.txt")
+        
+        if not os.path.exists(args.model_wt_path):
+            os.makedirs(args.model_wt_path)
+
+        torch.save(model.state_dict(), model_last_path)
+        if last_loss > loss:
+            torch.save(model.state_dict(), model_wts_path)
+            best_model = epoch
+
+        last_loss = loss
+
+        with open(model_txt_path, "w+") as f:
+            f.write("Best model epoch: %d\n" % (best_model))
+            f.write("Last model epoch: %d\n" % (epoch))
 
 
 
@@ -126,13 +163,13 @@ if __name__ == "__main__":
                         help="Weight decay")
     parser.add_argument("--expand-labels", action="store_true", 
                         help="expand labels to fit eval steps")
-    parser.add_argument('--train-batch', default=64, type=int,
+    parser.add_argument('--train-batch', default=512, type=int,
                         help='train batchsize')
     parser.add_argument('--test-batch', default=64, type=int,
                         help='train batchsize')
     parser.add_argument('--total-iter', default=1024*512, type=int,
                         help='total number of iterations to run')
-    parser.add_argument('--iter-per-epoch', default=1024, type=int,
+    parser.add_argument('--iter-per-epoch', default=128, type=int,
                         help="Number of iterations to run per epoch")
     parser.add_argument('--num-workers', default=1, type=int,
                         help="Number of workers to launch during training")                        
@@ -152,6 +189,8 @@ if __name__ == "__main__":
                         help="VAT iteration parameter") 
     parser.add_argument('--log-interval', type=int, default=100,
                         help='interval for logging training status')
+    parser.add_argument("--model_wt_path", default="./model_weights/", 
+                    type=str, help="Path to the saved model")
     # Add more arguments if you need them
     # Describe them in help
     # You can (and should) change the default values of the arguments

@@ -4,7 +4,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 def l2_norm(r):
-    r = r.view(r.shape[0], -1, *(1 for _ in range(r.dim() - 2)))
     r /= torch.norm(r, dim=1, keepdim=True) + 1e-8
     return r
 
@@ -24,7 +23,7 @@ class VATLoss(nn.Module):
         #random tensor sample 
         r = torch.rand(x.shape).sub(0.5).to(x.device)
         r = l2_norm(r)
-
+ 
         for _ in range(self.vat_iter): 
             r.requires_grad_()                                                      #torch function why isn't it available??????? 
             advEx = x + self.xi * r

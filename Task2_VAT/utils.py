@@ -21,7 +21,7 @@ def accuracy(output, target, topk=(1,)):
             res.append(correct_k.mul_(100.0 / batch_size))
         return res
 
-def epoch_log(object): 
+class epoch_log(object): 
     """Keeps track of the scores during an epoch and calculates the average"""
     def __init__(self): 
         self.initialize() 
