@@ -17,6 +17,7 @@ import torch
 import torch.optim as optim
 from torch.utils.data   import DataLoader
 import torch.nn as nn
+import numpy as np
 
 import warnings
 
@@ -32,22 +33,70 @@ def main(args):
         labeled_dataset, unlabeled_dataset, test_dataset = get_cifar100(args, 
                                                                 args.datapath)
     args.epoch = math.ceil(args.total_iter / args.iter_per_epoch)
-    
+ 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+    if not os.path.exists(Path(args.datapath) / Path('dataloaders')):
+        os.makedirs(Path(args.datapath) / Path('dataloaders'))
+
+    labeled_loader_path = Path(args.datapath) / Path('dataloaders') / Path('labeled_loader.pkl')
+    valid_loader_path = Path(args.datapath) / Path('dataloaders') / Path('valid_loader.pkl')
+    unlabeled_loader_path = Path(args.datapath) / Path('dataloaders') / Path('unlabeled_loader.pkl')
+    test_loader_path = Path(args.datapath) / Path('dataloaders') / Path('test_loader.pkl')
+
+    if os.path.exists(labeled_loader_path) and os.path.exists(valid_loader_path) and os.path.exists(unlabeled_loader_path) and os.path.exists(test_loader_path):
+        labeled_dataset = torch.load(labeled_loader_path)
+        unlabeled_dataset_split = torch.load(unlabeled_loader_path)
+        valid_dataset = torch.load(valid_loader_path) 
+        test_dataset = torch.load(test_loader_path)
+      
+    else:
+        val_set_idx = np.empty(0)
+        for i in set(unlabeled_dataset.targets):
+            data_size = int(np.where(unlabeled_dataset.targets ==  0)[0].shape[0]*0.1)
+            val_set_idx = np.append(val_set_idx, np.random.choice(np.where(unlabeled_dataset.targets ==  i)[0], data_size))
+
+        x_val = torch.empty(0, 3, 32, 32)
+        y_val = torch.empty(0).int()
+        x_unl = torch.empty(0, 3, 32, 32)
+        y_unl = torch.empty(0).int()
+        for i in tqdm(range(len(unlabeled_dataset))):
+            if i in val_set_idx:
+                x_val = torch.cat((x_val, unlabeled_dataset[i][0][None, :]))
+                y_val = torch.cat((y_val, torch.tensor(unlabeled_dataset.targets[i : i+1])))            
+            else:
+                x_unl = torch.cat((x_unl, unlabeled_dataset[i][0][None, :]))
+                y_unl = torch.cat((y_unl, torch.tensor(unlabeled_dataset.targets[i : i+1])))
+        unlabeled_dataset_split = list(zip(x_val, y_val))
+        valid_dataset = list(zip(x_unl, y_unl))
+    
+        torch.save(labeled_dataset, labeled_loader_path)
+        torch.save(unlabeled_dataset_split, unlabeled_loader_path)
+        torch.save(valid_dataset, valid_loader_path)
+        torch.save(test_dataset, test_loader_path)
+        
 
     labeled_loader      = iter(DataLoader(labeled_dataset, 
                                     batch_size = args.train_batch, 
                                     shuffle = True, 
                                     num_workers=args.num_workers))
-    unlabeled_loader    = iter(DataLoader(unlabeled_dataset, 
-                                    batch_size=args.train_batch,
+    # unlabeled_loader    = DataLoader(unlabeled_dataset, 
+    #                                 batch_size=args.train_batch,
+    #                                 shuffle = True, 
+    #                                 num_workers=args.num_workers)
+    valid_loader        = DataLoader(valid_dataset, 
+                                    batch_size = args.train_batch, 
+                                    shuffle = True, 
+                                    num_workers=args.num_workers)
+    unlabeled_loader    = iter(DataLoader(unlabeled_dataset_split, 
+                                    batch_size = args.train_batch, 
                                     shuffle = True, 
                                     num_workers=args.num_workers))
     test_loader         = DataLoader(test_dataset,
                                     batch_size = args.test_batch,
                                     shuffle = False, 
                                     num_workers=args.num_workers)
-    
+
     model       = WideResNet(args.model_depth, 
                                 args.num_classes, widen_factor=args.model_width)
     model       = model.to(device)
@@ -58,7 +107,7 @@ def main(args):
     
     model_txt_path  = Path(args.model_wt_path) / Path("epoch_info.txt")
     model_last_path = Path(args.model_wt_path) / Path("last_trained.h5")
-    
+    start_model = 0
     if os.path.exists(model_txt_path):
       with open(model_txt_path, "r") as f:
           txt = f.read()
@@ -69,10 +118,9 @@ def main(args):
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum)
     
-    for epoch in range(args.epoch):
+    for epoch in range(start_model, args.epoch):
         last_loss = 999999999.9
         for i in range(args.iter_per_epoch):
-
             if i % args.log_interval == 0:
                 ce_losses = epoch_log()
                 vat_losses = epoch_log()
@@ -124,6 +172,19 @@ def main(args):
                 f'CrossEntropyLoss {ce_losses.value:.4f} ({ce_losses.avg:.4f})\t'
                 f'VATLoss {vat_losses.value:.4f} ({vat_losses.avg:.4f})\t'
                 f'Accuracy {accuracies.value:.3f} ({accuracies.avg:.3f})')
+        val_loss = 0.0
+        for val_i, data in enumerate(valid_loader, 0):
+            inputs, labels = data
+            inputs, labels = inputs.to(device), labels.type(torch.LongTensor).to(device)
+            optimizer.zero_grad()
+
+            outputs = model(inputs)
+            val_acc = accuracy(outputs, labels)
+            v_loss = criterion(outputs.softmax(dim=1), labels)
+            val_loss += v_loss.item()
+
+        print('[epoch = %d] val_accuracy: %.3f val_loss: %.3f' %
+                (epoch, val_acc[0].item(), val_loss / val_i))
         
         model_last_path = Path(args.model_wt_path) / Path("last_trained.h5")
         model_wts_path  = Path(args.model_wt_path) / Path(f"epoch_{epoch}_of_{args.epoch}.h5")
@@ -131,20 +192,17 @@ def main(args):
         
         if not os.path.exists(args.model_wt_path):
             os.makedirs(args.model_wt_path)
-
         torch.save(model.state_dict(), model_last_path)
-        if last_loss > loss:
+
+        if last_loss > val_loss:
             torch.save(model.state_dict(), model_wts_path)
             best_model = epoch
 
-        last_loss = loss
+            last_loss = val_loss
 
         with open(model_txt_path, "w+") as f:
             f.write("Best model epoch: %d\n" % (best_model))
             f.write("Last model epoch: %d\n" % (epoch))
-
-
-
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Virtual adversarial training \
@@ -155,7 +213,7 @@ if __name__ == "__main__":
                         type=str, help="Path to the CIFAR-10/100 dataset")
     parser.add_argument('--num-labeled', type=int, 
                         default=4000, help='Total number of labeled samples')
-    parser.add_argument("--lr", default=0.03, type=float, 
+    parser.add_argument("--lr", default=0.1, type=float, 
                         help="The initial learning rate") 
     parser.add_argument("--momentum", default=0.9, type=float,
                         help="Optimizer momentum")
@@ -163,11 +221,11 @@ if __name__ == "__main__":
                         help="Weight decay")
     parser.add_argument("--expand-labels", action="store_true", 
                         help="expand labels to fit eval steps")
-    parser.add_argument('--train-batch', default=512, type=int,
+    parser.add_argument('--train-batch', default=256, type=int,
                         help='train batchsize')
-    parser.add_argument('--test-batch', default=64, type=int,
+    parser.add_argument('--test-batch', default=256, type=int,
                         help='train batchsize')
-    parser.add_argument('--total-iter', default=1024*512, type=int,
+    parser.add_argument('--total-iter', default=128*128, type=int,
                         help='total number of iterations to run')
     parser.add_argument('--iter-per-epoch', default=128, type=int,
                         help="Number of iterations to run per epoch")
@@ -190,6 +248,8 @@ if __name__ == "__main__":
     parser.add_argument('--log-interval', type=int, default=100,
                         help='interval for logging training status')
     parser.add_argument("--model_wt_path", default="./model_weights/", 
+                    type=str, help="Path to the saved model")
+    parser.add_argument("--dataloader_path", default="./data/dataloaders/", 
                     type=str, help="Path to the saved model")
     # Add more arguments if you need them
     # Describe them in help
