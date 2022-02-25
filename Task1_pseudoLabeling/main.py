@@ -6,6 +6,7 @@ import warnings
 import os
 from pathlib import Path
 import re
+import numpy as np
 
 from dataloader import get_cifar10, get_cifar100
 from utils      import accuracy
@@ -14,7 +15,7 @@ from model.wrn  import WideResNet
 
 import torch
 import torch.optim as optim
-from torch.utils.data   import DataLoader
+from torch.utils.data   import DataLoader, ConcatDataset
 import torch.nn as nn
 
 warnings.filterwarnings("ignore")
@@ -32,21 +33,50 @@ def main(args):
     
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
+    val_set_idx = np.empty(0)
+    for i in set(unlabeled_dataset.targets):
+        data_size = int(np.where(unlabeled_dataset.targets ==  0)[0].shape[0]*0.1)
+        val_set_idx = np.append(val_set_idx, np.random.choice(np.where(unlabeled_dataset.targets ==  i)[0], data_size))
+
+    x_val = torch.empty(0, 3, 32, 32).to(device)
+    y_val = torch.empty(0).to(device).int()
+    x_unl = torch.empty(0, 3, 32, 32).to(device)
+    y_unl = torch.empty(0).to(device).int()
+    for i in tqdm(range(len(unlabeled_dataset))):
+        if i in val_set_idx:
+            x_val = torch.cat((x_val, unlabeled_dataset[i][0][None, :].to(device)))
+            y_val = torch.cat((y_val, torch.tensor(unlabeled_dataset.targets[i : i+1]).to(device)))            
+        else:
+            x_unl = torch.cat((x_unl, unlabeled_dataset[i][0][None, :].to(device)))
+            y_unl = torch.cat((y_unl, torch.tensor(unlabeled_dataset.targets[i : i+1]).to(device)))
+
     labeled_loader      = iter(DataLoader(labeled_dataset, 
                                     batch_size = args.train_batch, 
                                     shuffle = True, 
                                     num_workers=args.num_workers))
-    unlabeled_loader    = DataLoader(unlabeled_dataset, 
-                                    batch_size=args.train_batch,
+    # unlabeled_loader    = DataLoader(unlabeled_dataset, 
+    #                                 batch_size=args.train_batch,
+    #                                 shuffle = True, 
+    #                                 num_workers=args.num_workers)
+    valid_loader        = DataLoader(list(zip(x_val, y_val)), 
+                                    batch_size = args.train_batch, 
+                                    shuffle = True, 
+                                    num_workers=args.num_workers)
+    unlabeled_loader    = DataLoader(list(zip(x_unl, y_unl)), 
+                                    batch_size = args.train_batch, 
                                     shuffle = True, 
                                     num_workers=args.num_workers)
     test_loader         = DataLoader(test_dataset,
                                     batch_size = args.test_batch,
                                     shuffle = False, 
                                     num_workers=args.num_workers)
-    
+    torch.save(labeled_loader, 'labeled_loader.pkl')
+    torch.save(valid_loader, 'valid_loader.pkl')
+    torch.save(unlabeled_loader, 'unlabeled_loader.pkl')
+    torch.save(test_loader, 'test_loader.pkl')
+
     model       = WideResNet(args.model_depth, 
-                                args.num_classes, widen_factor=args.model_width)
+                             args.num_classes, widen_factor=args.model_width)
     model       = model.to(device)
 
     ############################################################################
@@ -61,10 +91,10 @@ def main(args):
     curr_use_data = 'labelled'
     
 
-    model_txt_path  = Path(args.model_wt_path) / Path("epoch_info.txt")
+    model_txt_path  = Path(args.model_wt_path) / Path("epoch_info.txt" )
     model_last_path = Path(args.model_wt_path) / Path("last_trained.h5")
 
-    last_loss_train = 9999999999999.9
+    last_loss_val = 9999999999999.9
     start_model = 0
     best_model = 0
         
@@ -105,6 +135,8 @@ def main(args):
                                                     shuffle = True, 
                                                     num_workers=args.num_workers))
                         curr_use_data = 'X_t'
+                        # dsab_cat = ConcatDataset([dsa, dsb])
+                        # dsab_cat_loader = DataLoader(dsab_cat)
                 else:
                     labeled_loader      = iter(DataLoader(labeled_dataset, 
                                                 batch_size = args.train_batch, 
@@ -124,8 +156,18 @@ def main(args):
 
             running_loss_train += loss.item()
 
-        print('[epoch = %d] loss: %.3f' %
-                (epoch, running_loss_train / args.iter_per_epoch))
+        val_loss = 0.0
+        for val_i, data in enumerate(valid_loader, 0):
+            inputs, labels = data
+            inputs, labels = inputs.to(device), labels.type(torch.LongTensor).to(device)
+            optimizer.zero_grad()
+
+            outputs = model(inputs)
+            v_loss = criterion(outputs.softmax(dim=1), labels)
+            val_loss += v_loss.item()
+        
+        print('[epoch = %d] train_loss: %.3f val_loss: %.3f' %
+                (epoch, running_loss_train / args.iter_per_epoch, val_loss / val_i))
         # train_loss.append(running_loss_train / 2000)
         
         model_last_path = Path(args.model_wt_path) / Path("last_trained.h5")
@@ -136,11 +178,11 @@ def main(args):
             os.makedirs(args.model_wt_path)
 
         torch.save(model.state_dict(), model_last_path)
-        if last_loss_train > running_loss_train:
+        if last_loss_val > val_loss:
             torch.save(model.state_dict(), model_wts_path)
             best_model = epoch
 
-        last_loss_train = running_loss_train
+        last_loss_val = val_loss
 
         with open(model_txt_path, "w+") as f:
             f.write("Best model epoch: %d\n" % (best_model))
@@ -189,7 +231,7 @@ if __name__ == "__main__":
                         help="expand labels to fit eval steps")
     parser.add_argument('--train-batch', default=256, type=int, #512
                         help='train batchsize')
-    parser.add_argument('--test-batch', default=512, type=int,
+    parser.add_argument('--test-batch', default=256, type=int,
                         help='train batchsize')
     parser.add_argument('--total-iter', default=128*512, type=int,
                         help='total number of iterations to run')
