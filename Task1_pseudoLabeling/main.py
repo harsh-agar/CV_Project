@@ -104,11 +104,7 @@ def main(args):
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum)
 
-    x_t = torch.empty(0, 3, 32, 32).to(device)
-    y_t = torch.empty(0).to(device).int()
-    
     curr_use_data = 'labelled'
-    
 
     model_txt_path  = Path(args.model_wt_path) / Path("epoch_info.txt" )
     model_last_path = Path(args.model_wt_path) / Path("last_trained.h5")
@@ -142,32 +138,30 @@ def main(args):
                 o_ul = o_ul.to('cpu')
                 x_t = torch.cat((x_t, x_ul[torch.where(torch.max(o_ul.softmax(dim=1), axis=1)[0] > 0.95)[0]]))
                 y_t = torch.cat((y_t, o_ul.softmax(dim=1).max(dim=1)[1][torch.where(torch.max(o_ul.softmax(dim=1), axis=1)[0] > 0.95)[0]]))
-
+        print(x_t.shape[0])
         train_accuracies = epoch_log()
         val_accuracies   = epoch_log()
 
         for i in tqdm(range(args.iter_per_epoch)):
 
             try:
-                if i == 0 and curr_use_data == 'X_t':
-                    raise StopIteration()
-                else:
                     x_l, y_l    = next(labeled_loader)
 
             except StopIteration:
-                if curr_use_data == 'labelled' and y_t.shape[0] != 0:
-                        labeled_loader      = iter(DataLoader(list(zip(x_t, y_t)), batch_size = args.train_batch, 
-                                                    shuffle = True, 
-                                                    num_workers=args.num_workers))
-                        curr_use_data = 'X_t'
-                        # dsab_cat = ConcatDataset([dsa, dsb])
-                        # dsab_cat_loader = DataLoader(dsab_cat)
+                if x_t.shape[0] > 0:
+                    labeled_loader      = iter(itertools.chain(DataLoader(list(zip(x_t, y_t)), 
+                                                                          batch_size = args.train_batch, 
+                                                                          shuffle = True, 
+                                                                          num_workers=args.num_workers),
+                                                               DataLoader(labeled_dataset, 
+                                                                          batch_size = args.train_batch, 
+                                                                          shuffle = True, 
+                                                                          num_workers=args.num_workers)))
                 else:
                     labeled_loader      = iter(DataLoader(labeled_dataset, 
-                                                batch_size = args.train_batch, 
-                                                shuffle = True, 
-                                                num_workers=args.num_workers))
-                    curr_use_data = 'labelled'
+                                                          batch_size = args.train_batch, 
+                                                          shuffle = True, 
+                                                          num_workers=args.num_workers))
                 x_l, y_l    = next(labeled_loader)
             
             x_l, y_l    = x_l.to(device), y_l.to(device)
@@ -258,7 +252,7 @@ if __name__ == "__main__":
                         help="The initial learning rate") 
     parser.add_argument("--momentum", default=0.9, type=float,
                         help="Optimizer momentum")
-    parser.add_argument("--wd", default=0.00005, type=float,
+    parser.add_argument("--wd", default=0, type=float,
                         help="Weight decay")
     parser.add_argument("--expand-labels", action="store_true", 
                         help="expand labels to fit eval steps")
@@ -266,7 +260,7 @@ if __name__ == "__main__":
                         help='train batchsize')
     parser.add_argument('--test-batch', default=256, type=int,
                         help='train batchsize')
-    parser.add_argument('--total-iter', default=128*512, type=int,
+    parser.add_argument('--total-iter', default=128*256, type=int,
                         help='total number of iterations to run')
     parser.add_argument('--iter-per-epoch', default=128, type=int,
                         help="Number of iterations to run per epoch")
