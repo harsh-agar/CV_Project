@@ -77,10 +77,6 @@ def main(args):
                                     batch_size = args.train_batch, 
                                     shuffle = True, 
                                     num_workers=args.num_workers))
-    # unlabeled_loader    = DataLoader(unlabeled_dataset, 
-    #                                 batch_size=args.train_batch,
-    #                                 shuffle = True, 
-    #                                 num_workers=args.num_workers)
     valid_loader        = DataLoader(valid_dataset, 
                                     batch_size = args.train_batch, 
                                     shuffle = True, 
@@ -105,11 +101,11 @@ def main(args):
     optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum)
 
     curr_use_data = 'labelled'
+    model_wt_path = Path('model_weights_%s_%.2f' %(args.dataset, args.threshold)) 
+    model_txt_path  = Path(model_wt_path) / Path("epoch_info.txt" )
+    model_last_path = Path(model_wt_path) / Path("last_trained.h5")
 
-    model_txt_path  = Path(args.model_wt_path) / Path("epoch_info.txt" )
-    model_last_path = Path(args.model_wt_path) / Path("last_trained.h5")
-
-    last_loss_val = 9999999999999.9
+    best_loss_val = 9999999999999.9
     start_model = 0
     best_model = 0
         
@@ -197,19 +193,18 @@ def main(args):
                 (epoch, running_loss_train / args.iter_per_epoch, val_loss / val_i, train_accuracies.avg, val_accuracies.avg))
         # train_loss.append(running_loss_train / 2000)
         
-        model_last_path = Path(args.model_wt_path) / Path("last_trained.h5")
-        model_wts_path  = Path(args.model_wt_path) / Path(f"epoch_{epoch}_of_{args.epoch}.h5")
-        model_txt_path  = Path(args.model_wt_path) / Path("epoch_info.txt")
+        model_last_path = Path(model_wt_path) / Path("last_trained.h5")
+        model_wts_path  = Path(model_wt_path) / Path(f"epoch_{epoch}_of_{args.epoch}.h5")
+        model_txt_path  = Path(model_wt_path) / Path("epoch_info.txt")
         
-        if not os.path.exists(args.model_wt_path):
-            os.makedirs(args.model_wt_path)
+        if not os.path.exists(model_wt_path):
+            os.makedirs(model_wt_path)
 
         torch.save(model.state_dict(), model_last_path)
-        if last_loss_val > val_loss:
+        if best_loss_val > val_loss:
             torch.save(model.state_dict(), model_wts_path)
             best_model = epoch
-
-        last_loss_val = val_loss
+            best_loss_val = val_loss
 
         with open(model_txt_path, "w+") as f:
             f.write("Best model epoch: %d\n" % (best_model))
@@ -276,8 +271,6 @@ if __name__ == "__main__":
                         help="model width for wide resnet")
     parser.add_argument("--use-saved-model", type=bool, default=True,
                         help="Use one of the saved model")
-    parser.add_argument("--model_wt_path", default="./model_weights/", 
-                        type=str, help="Path to the saved model")
     
     # Add more arguments if you need them
     # Describe them in help
