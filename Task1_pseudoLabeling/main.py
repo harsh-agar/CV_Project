@@ -7,9 +7,10 @@ import os
 from pathlib import Path
 import re
 import numpy as np
+import itertools
 
 from dataloader import get_cifar10, get_cifar100
-from utils      import accuracy
+from utils      import accuracy, epoch_log
 
 from model.wrn  import WideResNet
 
@@ -33,22 +34,44 @@ def main(args):
     
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-    val_set_idx = np.empty(0)
-    for i in set(unlabeled_dataset.targets):
-        data_size = int(np.where(unlabeled_dataset.targets ==  0)[0].shape[0]*0.1)
-        val_set_idx = np.append(val_set_idx, np.random.choice(np.where(unlabeled_dataset.targets ==  i)[0], data_size))
+    if not os.path.exists(Path(args.datapath) / Path('dataloaders')):
+        os.makedirs(Path(args.datapath) / Path('dataloaders'))
 
-    x_val = torch.empty(0, 3, 32, 32).to(device)
-    y_val = torch.empty(0).to(device).int()
-    x_unl = torch.empty(0, 3, 32, 32).to(device)
-    y_unl = torch.empty(0).to(device).int()
-    for i in tqdm(range(len(unlabeled_dataset))):
-        if i in val_set_idx:
-            x_val = torch.cat((x_val, unlabeled_dataset[i][0][None, :].to(device)))
-            y_val = torch.cat((y_val, torch.tensor(unlabeled_dataset.targets[i : i+1]).to(device)))            
-        else:
-            x_unl = torch.cat((x_unl, unlabeled_dataset[i][0][None, :].to(device)))
-            y_unl = torch.cat((y_unl, torch.tensor(unlabeled_dataset.targets[i : i+1]).to(device)))
+    labeled_loader_path = Path(args.datapath) / Path('dataloaders') / Path('labeled_loader.pkl')
+    valid_loader_path = Path(args.datapath) / Path('dataloaders') / Path('valid_loader.pkl')
+    unlabeled_loader_path = Path(args.datapath) / Path('dataloaders') / Path('unlabeled_loader.pkl')
+    test_loader_path = Path(args.datapath) / Path('dataloaders') / Path('test_loader.pkl')
+
+    if os.path.exists(labeled_loader_path) and os.path.exists(valid_loader_path) and os.path.exists(unlabeled_loader_path) and os.path.exists(test_loader_path):
+        labeled_dataset = torch.load(labeled_loader_path)
+        unlabeled_dataset_split = torch.load(unlabeled_loader_path)
+        valid_dataset = torch.load(valid_loader_path) 
+        test_dataset = torch.load(test_loader_path)
+      
+    else:
+        val_set_idx = np.empty(0)
+        for i in set(unlabeled_dataset.targets):
+            data_size = int(np.where(unlabeled_dataset.targets ==  0)[0].shape[0]*0.1)
+            val_set_idx = np.append(val_set_idx, np.random.choice(np.where(unlabeled_dataset.targets ==  i)[0], data_size))
+
+        x_val = torch.empty(0, 3, 32, 32)
+        y_val = torch.empty(0).int()
+        x_unl = torch.empty(0, 3, 32, 32)
+        y_unl = torch.empty(0).int()
+        for i in tqdm(range(len(unlabeled_dataset))):
+            if i in val_set_idx:
+                x_val = torch.cat((x_val, unlabeled_dataset[i][0][None, :]))
+                y_val = torch.cat((y_val, torch.tensor(unlabeled_dataset.targets[i : i+1])))            
+            else:
+                x_unl = torch.cat((x_unl, unlabeled_dataset[i][0][None, :]))
+                y_unl = torch.cat((y_unl, torch.tensor(unlabeled_dataset.targets[i : i+1])))
+        unlabeled_dataset_split = list(zip(x_val, y_val))
+        valid_dataset = list(zip(x_unl, y_unl))
+    
+        torch.save(labeled_dataset, labeled_loader_path)
+        torch.save(unlabeled_dataset_split, unlabeled_loader_path)
+        torch.save(valid_dataset, valid_loader_path)
+        torch.save(test_dataset, test_loader_path)
 
     labeled_loader      = iter(DataLoader(labeled_dataset, 
                                     batch_size = args.train_batch, 
@@ -58,11 +81,11 @@ def main(args):
     #                                 batch_size=args.train_batch,
     #                                 shuffle = True, 
     #                                 num_workers=args.num_workers)
-    valid_loader        = DataLoader(list(zip(x_val, y_val)), 
+    valid_loader        = DataLoader(valid_dataset, 
                                     batch_size = args.train_batch, 
                                     shuffle = True, 
                                     num_workers=args.num_workers)
-    unlabeled_loader    = DataLoader(list(zip(x_unl, y_unl)), 
+    unlabeled_loader    = DataLoader(unlabeled_dataset_split, 
                                     batch_size = args.train_batch, 
                                     shuffle = True, 
                                     num_workers=args.num_workers)
@@ -70,10 +93,6 @@ def main(args):
                                     batch_size = args.test_batch,
                                     shuffle = False, 
                                     num_workers=args.num_workers)
-    torch.save(labeled_loader, 'labeled_loader.pkl')
-    torch.save(valid_loader, 'valid_loader.pkl')
-    torch.save(unlabeled_loader, 'unlabeled_loader.pkl')
-    torch.save(test_loader, 'test_loader.pkl')
 
     model       = WideResNet(args.model_depth, 
                              args.num_classes, widen_factor=args.model_width)
@@ -104,13 +123,14 @@ def main(args):
         start_model = int(re.search('Last model epoch: (.*)\n', txt).group(1)) + 1
         best_model = int(re.search('Best model epoch: (.*)\n', txt).group(1))
         model.load_state_dict(torch.load(model_last_path))
+        print("Loaded Model: " + str(start_model))
 
     for epoch in range(start_model, args.epoch):
         model.train()
         running_loss_train = 0.0
 
-        x_t = torch.empty(0, 3, 32, 32).to(device)
-        y_t = torch.empty(0).to(device).int()
+        x_t = torch.empty(0, 3, 32, 32)
+        y_t = torch.empty(0).int()
 
         if epoch > 10:    
             for unlab_load in unlabeled_loader:
@@ -118,11 +138,16 @@ def main(args):
 
                 x_ul = x_ul.to(device)
                 o_ul = model(x_ul)
+                x_ul = x_ul.to('cpu')
+                o_ul = o_ul.to('cpu')
                 x_t = torch.cat((x_t, x_ul[torch.where(torch.max(o_ul.softmax(dim=1), axis=1)[0] > 0.95)[0]]))
                 y_t = torch.cat((y_t, o_ul.softmax(dim=1).max(dim=1)[1][torch.where(torch.max(o_ul.softmax(dim=1), axis=1)[0] > 0.95)[0]]))
 
+        train_accuracies = epoch_log()
+        val_accuracies   = epoch_log()
+
         for i in tqdm(range(args.iter_per_epoch)):
-            
+
             try:
                 if i == 0 and curr_use_data == 'X_t':
                     raise StopIteration()
@@ -154,6 +179,10 @@ def main(args):
             loss.backward()
             optimizer.step()
 
+            train_acc = accuracy(o_l, y_l)
+
+            train_accuracies.update(train_acc[0].item(), x_l.shape[0])
+
             running_loss_train += loss.item()
 
         val_loss = 0.0
@@ -165,9 +194,13 @@ def main(args):
             outputs = model(inputs)
             v_loss = criterion(outputs.softmax(dim=1), labels)
             val_loss += v_loss.item()
+            
+            val_acc = accuracy(outputs, labels)
+
+            val_accuracies.update(val_acc[0].item(), inputs.shape[0])
         
-        print('[epoch = %d] train_loss: %.3f val_loss: %.3f' %
-                (epoch, running_loss_train / args.iter_per_epoch, val_loss / val_i))
+        print('[epoch = %d] train_loss: %.3f val_loss: %.3f train_accuracy: %.3f val_accuracy: %.3f' %
+                (epoch, running_loss_train / args.iter_per_epoch, val_loss / val_i, train_accuracies.avg, val_accuracies.avg))
         # train_loss.append(running_loss_train / 2000)
         
         model_last_path = Path(args.model_wt_path) / Path("last_trained.h5")
@@ -221,7 +254,7 @@ if __name__ == "__main__":
                         type=str, help="Path to the CIFAR-10/100 dataset")
     parser.add_argument('--num-labeled', type=int, 
                         default=4000, help='Total number of labeled samples')
-    parser.add_argument("--lr", default=0.03, type=float, 
+    parser.add_argument("--lr", default=0.1, type=float, 
                         help="The initial learning rate") 
     parser.add_argument("--momentum", default=0.9, type=float,
                         help="Optimizer momentum")
