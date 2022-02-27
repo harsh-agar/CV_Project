@@ -18,10 +18,14 @@ import torch
 import torch.optim as optim
 from torch.utils.data   import DataLoader, ConcatDataset
 import torch.nn as nn
+from torch.utils.tensorboard import SummaryWriter
+
 
 warnings.filterwarnings("ignore")
 
 def main(args):
+    writer = SummaryWriter()
+
     if args.dataset == "cifar10":
         args.num_classes = 10
         labeled_dataset, unlabeled_dataset, test_dataset = get_cifar10(args, 
@@ -123,7 +127,7 @@ def main(args):
         x_t = torch.empty(0, 3, 32, 32)
         y_t = torch.empty(0).int()
 
-        if epoch > 10:    
+        if epoch > 2:    
             for unlab_load in unlabeled_loader:
                 x_ul, _ = unlab_load
 
@@ -133,7 +137,8 @@ def main(args):
                 o_ul = o_ul.to('cpu')
                 x_t = torch.cat((x_t, x_ul[torch.where(torch.max(o_ul.softmax(dim=1), axis=1)[0] > args.threshold)[0]]))
                 y_t = torch.cat((y_t, o_ul.softmax(dim=1).max(dim=1)[1][torch.where(torch.max(o_ul.softmax(dim=1), axis=1)[0] > args.threshold)[0]]))
-                w_t = torch.sigmoid(torch.max(o_ul.softmax(dim=1), axis=1)[0])*2 - 1
+                w_t = (torch.sigmoid(torch.max(o_ul.softmax(dim=1), axis=1)[0])*2 - 1).detach()
+
         print(x_t.shape[0])
         train_accuracies = epoch_log()
         val_accuracies   = epoch_log()
@@ -176,10 +181,9 @@ def main(args):
             optimizer.zero_grad()
 
             o_l = model(x_l)
-            criterion_weighted = nn.CrossEntropyLoss(weight=class_wts, reduction='mean')
-            class_wts = torch.ones(args.num_classes).to(device) * torch.mean(w_l)
-            loss = criterion_weighted(o_l.softmax(dim=1), y_l)
-            loss.backward()
+            loss = criterion(o_l.softmax(dim=1), y_l)
+            loss = loss * w_l
+            loss.mean().backward()
             optimizer.step()
 
             train_acc = accuracy(o_l, y_l)
@@ -253,7 +257,7 @@ if __name__ == "__main__":
                         help="The initial learning rate") 
     parser.add_argument("--momentum", default=0.9, type=float,
                         help="Optimizer momentum")
-    parser.add_argument("--wd", default=0.00, type=float,
+    parser.add_argument("--wd", default=0.0001, type=float,
                         help="Weight decay")
     parser.add_argument("--expand-labels", action="store_true", 
                         help="expand labels to fit eval steps")
