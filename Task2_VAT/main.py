@@ -39,10 +39,10 @@ def main(args):
     if not os.path.exists(Path(args.datapath) / Path('dataloaders')):
         os.makedirs(Path(args.datapath) / Path('dataloaders'))
 
-    labeled_loader_path = Path(args.datapath) / Path('dataloaders') / Path('labeled_loader.pkl')
-    valid_loader_path = Path(args.datapath) / Path('dataloaders') / Path('valid_loader.pkl')
-    unlabeled_loader_path = Path(args.datapath) / Path('dataloaders') / Path('unlabeled_loader.pkl')
-    test_loader_path = Path(args.datapath) / Path('dataloaders') / Path('test_loader.pkl')
+    labeled_loader_path = Path(args.datapath) / Path('dataloaders_%s' %(args.dataset)) / Path('labeled_loader.pkl')
+    valid_loader_path = Path(args.datapath) / Path('dataloaders_%s' %(args.dataset)) / Path('valid_loader.pkl')
+    unlabeled_loader_path = Path(args.datapath) / Path('dataloaders_%s' %(args.dataset)) / Path('unlabeled_loader.pkl')
+    test_loader_path = Path(args.datapath) / Path('dataloaders_%s' %(args.dataset)) / Path('test_loader.pkl')
 
     if os.path.exists(labeled_loader_path) and os.path.exists(valid_loader_path) and os.path.exists(unlabeled_loader_path) and os.path.exists(test_loader_path):
         labeled_dataset = torch.load(labeled_loader_path)
@@ -104,9 +104,9 @@ def main(args):
     ############################################################################
     # TODO: SUPPLY your code
     ############################################################################
-    
-    model_txt_path  = Path(args.model_wt_path) / Path("epoch_info.txt")
-    model_last_path = Path(args.model_wt_path) / Path("last_trained.h5")
+    model_wt_path = Path('model_weights_%s_%.2f' %(args.dataset, args.threshold)) 
+    model_txt_path  = Path(model_wt_path) / Path("epoch_info.txt")
+    model_last_path = Path(model_wt_path) / Path("last_trained.h5")
     start_model = 0
     if os.path.exists(model_txt_path):
       with open(model_txt_path, "r") as f:
@@ -187,12 +187,12 @@ def main(args):
         print('[epoch = %d] [train_accuracy: %.3f] [ce_loss: %.3f] [vat_loss: %.3f]  val_accuracy: %.3f val_loss: %.3f' %
                 (epoch, accuracies.avg, ce_losses.avg, vat_losses.avg, val_acc.avg, val_loss / val_i))
         
-        model_last_path = Path(args.model_wt_path) / Path("last_trained.h5")
-        model_wts_path  = Path(args.model_wt_path) / Path(f"epoch_{epoch}_of_{args.epoch}.h5")
-        model_txt_path  = Path(args.model_wt_path) / Path("epoch_info.txt")
+        model_last_path = Path(model_wt_path) / Path("last_trained.h5")
+        model_wts_path  = Path(model_wt_path) / Path(f"epoch_{epoch}_of_{args.epoch}.h5")
+        model_txt_path  = Path(model_wt_path) / Path("epoch_info.txt")
         
-        if not os.path.exists(args.model_wt_path):
-            os.makedirs(args.model_wt_path)
+        if not os.path.exists(model_wt_path):
+            os.makedirs(model_wt_path)
         torch.save(model.state_dict(), model_last_path)
 
         if last_loss > val_loss:
@@ -248,8 +248,7 @@ if __name__ == "__main__":
                         help="VAT iteration parameter") 
     parser.add_argument('--log-interval', type=int, default=100,
                         help='interval for logging training status')
-    parser.add_argument("--model_wt_path", default="./model_weights/", 
-                    type=str, help="Path to the saved model")
+
     # parser.add_argument("--dataloader_path", default="./data/dataloaders/", 
     #                 type=str, help="Path to the saved model")
     # Add more arguments if you need them
