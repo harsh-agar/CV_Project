@@ -116,11 +116,11 @@ def main(args):
       model.load_state_dict(torch.load(model_last_path))
     
     criterion = nn.CrossEntropyLoss()
-    optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum)
+    optimizer = optim.Adam(model.parameters(), lr=args.lr) #, momentum=args.momentum)
     
     for epoch in range(start_model, args.epoch):
         last_loss = 999999999.9
-        for i in range(args.iter_per_epoch):
+        for i in tqdm(range(args.iter_per_epoch)):
             if i % args.log_interval == 0:
                 ce_losses = epoch_log()
                 vat_losses = epoch_log()
@@ -153,7 +153,7 @@ def main(args):
             optimizer.zero_grad()
             vatLoss = VATLoss(args)
 
-            vat_loss = vatLoss(model, x_ul)
+            vat_loss = vatLoss.forward(model, x_ul)
             preds = model(x_l)
             classification_loss = criterion(preds.softmax(dim=1), y_l)
             loss = classification_loss + args.alpha * vat_loss
@@ -166,25 +166,26 @@ def main(args):
             vat_losses.update(loss.item(), x_ul.shape[0])
             accuracies.update(acc[0].item(), x_l.shape[0])
 
-            if i % args.log_interval == 0:
-                print(f'\nEpoch: {epoch}\t'
-                f'\nIteration: {i}\t'
-                f'CrossEntropyLoss {ce_losses.value:.4f} ({ce_losses.avg:.4f})\t'
-                f'VATLoss {vat_losses.value:.4f} ({vat_losses.avg:.4f})\t'
-                f'Accuracy {accuracies.value:.3f} ({accuracies.avg:.3f})')
+            # if i % args.log_interval == 0:
+            #     print('[epoch = %d] [iteration = %d] [ce_loss: %.3f] [vat_loss: %.3f] [train_accuracy: %.3f]' %
+            #     (epoch,i, ce_losses.avg, vat_losses.avg, accuracies.avg))
+
         val_loss = 0.0
+        val_acc = epoch_log()
         for val_i, data in enumerate(valid_loader, 0):
             inputs, labels = data
             inputs, labels = inputs.to(device), labels.type(torch.LongTensor).to(device)
             optimizer.zero_grad()
 
             outputs = model(inputs)
-            val_acc = accuracy(outputs, labels)
+            acc = accuracy(outputs, labels)
+            val_acc.update(acc[0].item(), inputs.shape[0])
             v_loss = criterion(outputs.softmax(dim=1), labels)
             val_loss += v_loss.item()
 
-        print('[epoch = %d] val_accuracy: %.3f val_loss: %.3f' %
-                (epoch, val_acc[0].item(), val_loss / val_i))
+
+        print('[epoch = %d] [train_accuracy: %.3f] [ce_loss: %.3f] [vat_loss: %.3f]  val_accuracy: %.3f val_loss: %.3f' %
+                (epoch, accuracies.avg, ce_losses.avg, vat_losses.avg, val_acc.avg, val_loss / val_i))
         
         model_last_path = Path(args.model_wt_path) / Path("last_trained.h5")
         model_wts_path  = Path(args.model_wt_path) / Path(f"epoch_{epoch}_of_{args.epoch}.h5")
@@ -213,7 +214,7 @@ if __name__ == "__main__":
                         type=str, help="Path to the CIFAR-10/100 dataset")
     parser.add_argument('--num-labeled', type=int, 
                         default=4000, help='Total number of labeled samples')
-    parser.add_argument("--lr", default=0.1, type=float, 
+    parser.add_argument("--lr", default=0.01, type=float, 
                         help="The initial learning rate") 
     parser.add_argument("--momentum", default=0.9, type=float,
                         help="Optimizer momentum")
@@ -249,8 +250,8 @@ if __name__ == "__main__":
                         help='interval for logging training status')
     parser.add_argument("--model_wt_path", default="./model_weights/", 
                     type=str, help="Path to the saved model")
-    parser.add_argument("--dataloader_path", default="./data/dataloaders/", 
-                    type=str, help="Path to the saved model")
+    # parser.add_argument("--dataloader_path", default="./data/dataloaders/", 
+    #                 type=str, help="Path to the saved model")
     # Add more arguments if you need them
     # Describe them in help
     # You can (and should) change the default values of the arguments
