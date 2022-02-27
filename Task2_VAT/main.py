@@ -36,8 +36,8 @@ def main(args):
  
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-    if not os.path.exists(Path(args.datapath) / Path('dataloaders')):
-        os.makedirs(Path(args.datapath) / Path('dataloaders'))
+    if not os.path.exists(Path(args.datapath) / Path('dataloaders_%s' %(args.dataset))):
+        os.makedirs(Path(args.datapath) / Path('dataloaders_%s' %(args.dataset)))
 
     labeled_loader_path = Path(args.datapath) / Path('dataloaders_%s' %(args.dataset)) / Path('labeled_loader.pkl')
     valid_loader_path = Path(args.datapath) / Path('dataloaders_%s' %(args.dataset)) / Path('valid_loader.pkl')
