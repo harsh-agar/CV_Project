@@ -104,7 +104,7 @@ def main(args):
     ############################################################################
     # TODO: SUPPLY your code
     ############################################################################
-    model_wt_path = Path('model_weights_%s_%.2f' %(args.dataset, args.threshold)) 
+    model_wt_path = Path('model_weights_%s_%.2f' %(args.dataset)) 
     model_txt_path  = Path(model_wt_path) / Path("epoch_info.txt")
     model_last_path = Path(model_wt_path) / Path("last_trained.h5")
     start_model = 0
