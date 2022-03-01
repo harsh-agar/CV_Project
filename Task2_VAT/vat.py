@@ -37,8 +37,8 @@ class VATLoss(nn.Module):
             d = l2_norm(r.grad)
             model.zero_grad()
         
-        if not os.path.exists(self.imagepath):
-            os.makedirs(self.imagepath)
+        # if not os.path.exists(self.imagepath):
+        #     os.makedirs(self.imagepath)
         
         #saving adversarial examples 
         # for i, data in enumerate(advEx): 

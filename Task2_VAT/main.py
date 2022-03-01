@@ -98,15 +98,17 @@ def main(args):
                                     num_workers=args.num_workers)
 
     model       = WideResNet(args.model_depth, 
-                                args.num_classes, widen_factor=args.model_width)
+                                args.num_classes, widen_factor=args.model_width, dropRate=args.model_droprate)
     model       = model.to(device)
 
     ############################################################################
     # TODO: SUPPLY your code
     ############################################################################
-    model_wt_path = Path('model_weights_%s_%.2f' %(args.dataset)) 
-    model_txt_path  = Path(model_wt_path) / Path("epoch_info.txt")
+    model_wt_path = Path('model_weights_%s' %(args.dataset))
+    logfilename     = Path(model_wt_path) / Path("log_info.txt")
     model_last_path = Path(model_wt_path) / Path("last_trained.h5")
+    model_txt_path  = Path(model_wt_path) / Path("epoch_info.txt")
+
     start_model = 0
     if os.path.exists(model_txt_path):
       with open(model_txt_path, "r") as f:
@@ -116,7 +118,7 @@ def main(args):
       model.load_state_dict(torch.load(model_last_path))
     
     criterion = nn.CrossEntropyLoss()
-    optimizer = optim.Adam(model.parameters(), lr=args.lr) #, momentum=args.momentum)
+    optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum, weight_decay=args.wd)
     
     for epoch in range(start_model, args.epoch):
         last_loss = 999999999.9
@@ -183,16 +185,17 @@ def main(args):
             v_loss = criterion(outputs.softmax(dim=1), labels)
             val_loss += v_loss.item()
 
-
-        print('[epoch = %d] [train_accuracy: %.3f] [ce_loss: %.3f] [vat_loss: %.3f]  val_accuracy: %.3f val_loss: %.3f' %
-                (epoch, accuracies.avg, ce_losses.avg, vat_losses.avg, val_acc.avg, val_loss / val_i))
-        
-        model_last_path = Path(model_wt_path) / Path("last_trained.h5")
-        model_wts_path  = Path(model_wt_path) / Path(f"epoch_{epoch}_of_{args.epoch}.h5")
-        model_txt_path  = Path(model_wt_path) / Path("epoch_info.txt")
-        
         if not os.path.exists(model_wt_path):
             os.makedirs(model_wt_path)
+
+        with open(logfilename, 'a+') as f:
+            f.write('[epoch = %d] train_accuracy: %.3f ce_loss: %.3f vat_loss: %.3f  val_accuracy: %.3f val_loss: %.3f \n' %
+                (epoch, accuracies.avg, ce_losses.avg, vat_losses.avg, val_acc.avg, val_loss / val_i))
+        print('[epoch = %d] train_accuracy: %.3f ce_loss: %.3f vat_loss: %.3f  val_accuracy: %.3f val_loss: %.3f' %
+                (epoch, accuracies.avg, ce_losses.avg, vat_losses.avg, val_acc.avg, val_loss / val_i))
+        
+        model_wts_path  = Path(model_wt_path) / Path(f"epoch_{epoch}_of_{args.epoch}.h5")
+        
         torch.save(model.state_dict(), model_last_path)
 
         if last_loss > val_loss:
@@ -214,11 +217,11 @@ if __name__ == "__main__":
                         type=str, help="Path to the CIFAR-10/100 dataset")
     parser.add_argument('--num-labeled', type=int, 
                         default=4000, help='Total number of labeled samples')
-    parser.add_argument("--lr", default=0.01, type=float, 
+    parser.add_argument("--lr", default=0.1, type=float,
                         help="The initial learning rate") 
     parser.add_argument("--momentum", default=0.9, type=float,
                         help="Optimizer momentum")
-    parser.add_argument("--wd", default=0.00005, type=float,
+    parser.add_argument("--wd", default=0.0005, type=float,
                         help="Weight decay")
     parser.add_argument("--expand-labels", action="store_true", 
                         help="expand labels to fit eval steps")
@@ -238,6 +241,8 @@ if __name__ == "__main__":
                         help="Path to save log files")
     parser.add_argument("--model-depth", type=int, default=28,
                         help="model depth for wide resnet") 
+    parser.add_argument("--model-droprate", type=float, default=0.0,
+                        help="model dropout rate for wide resnet")
     parser.add_argument("--model-width", type=int, default=2,
                         help="model width for wide resnet")
     parser.add_argument("--vat-xi", default=10.0, type=float, 
@@ -245,7 +250,7 @@ if __name__ == "__main__":
     parser.add_argument("--vat-eps", default=1.0, type=float, 
                         help="VAT epsilon parameter") 
     parser.add_argument("--vat-iter", default=1, type=int, 
-                        help="VAT iteration parameter") 
+                        help="VAT iteration parameter")
     parser.add_argument('--log-interval', type=int, default=100,
                         help='interval for logging training status')
 
