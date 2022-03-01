@@ -38,13 +38,13 @@ def main(args):
     
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-    if not os.path.exists(Path(args.datapath) / Path('dataloaders_%s' %(args.dataset))):
-        os.makedirs(Path(args.datapath) / Path('dataloaders_%s' %(args.dataset)))
+    if not os.path.exists(Path(args.datapath) / Path('dataloaders_%s_%s' %(args.dataset, str(args.num_labeled)))):
+        os.makedirs(Path(args.datapath) / Path('dataloaders_%s_%s' %(args.dataset, str(args.num_labeled))))
 
-    labeled_loader_path = Path(args.datapath) / Path('dataloaders_%s' %(args.dataset)) / Path('labeled_loader.pkl')
-    valid_loader_path = Path(args.datapath) / Path('dataloaders_%s' %(args.dataset)) / Path('valid_loader.pkl')
-    unlabeled_loader_path = Path(args.datapath) / Path('dataloaders_%s' %(args.dataset)) / Path('unlabeled_loader.pkl')
-    test_loader_path = Path(args.datapath) / Path('dataloaders_%s' %(args.dataset)) / Path('test_loader.pkl')
+    labeled_loader_path = Path(args.datapath) / Path('dataloaders_%s_%s' %(args.dataset, str(args.num_labeled))) / Path('labeled_loader.pkl')
+    valid_loader_path = Path(args.datapath) / Path('dataloaders_%s_%s' %(args.dataset, str(args.num_labeled))) / Path('valid_loader.pkl')
+    unlabeled_loader_path = Path(args.datapath) / Path('dataloaders_%s_%s' %(args.dataset, str(args.num_labeled))) / Path('unlabeled_loader.pkl')
+    test_loader_path = Path(args.datapath) / Path('dataloaders_%s_%s' %(args.dataset, str(args.num_labeled))) / Path('test_loader.pkl')
 
     if os.path.exists(labeled_loader_path) and os.path.exists(valid_loader_path) and os.path.exists(unlabeled_loader_path) and os.path.exists(test_loader_path):
         labeled_dataset = torch.load(labeled_loader_path)
@@ -53,6 +53,9 @@ def main(args):
         test_dataset = torch.load(test_loader_path)
       
     else:
+        torch.save(labeled_dataset, labeled_loader_path)
+        torch.save(test_dataset, test_loader_path)
+
         val_set_idx = np.empty(0)
         for i in set(unlabeled_dataset.targets):
             data_size = int(np.where(unlabeled_dataset.targets ==  i)[0].shape[0] * 0.1)
@@ -72,10 +75,8 @@ def main(args):
         valid_dataset = list(zip(x_val, y_val))
         unlabeled_dataset_split = list(zip(x_unl, y_unl))
     
-        torch.save(labeled_dataset, labeled_loader_path)
         torch.save(unlabeled_dataset_split, unlabeled_loader_path)
         torch.save(valid_dataset, valid_loader_path)
-        torch.save(test_dataset, test_loader_path)
 
     labeled_loader      = iter(DataLoader(labeled_dataset, 
                                     batch_size = args.train_batch, 
@@ -95,7 +96,7 @@ def main(args):
                                     num_workers=args.num_workers)
 
     model       = WideResNet(args.model_depth, 
-                             args.num_classes, widen_factor=args.model_width)
+                             args.num_classes, widen_factor=args.model_width, dropRate=args.drop_rate)
     model       = model.to(device)
 
     ############################################################################
@@ -104,7 +105,7 @@ def main(args):
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.SGD(model.parameters(), lr=args.lr, weight_decay=args.wd, momentum=args.momentum)
 
-    model_wt_path = Path('model_weights_%s_%.2f' %(args.dataset, args.threshold)) 
+    model_wt_path = Path('model_weights_%s_%s_%.2f' %(args.dataset, args.num_labeled, args.threshold)) 
     model_txt_path  = Path(model_wt_path) / Path("epoch_info.txt" )
     model_last_path = Path(model_wt_path) / Path("last_trained.h5")
 
@@ -127,7 +128,7 @@ def main(args):
         x_t = torch.empty(0, 3, 32, 32)
         y_t = torch.empty(0).int()
 
-        if epoch > 2:    
+        if True: #epoch > 0:    
             for unlab_load in unlabeled_loader:
                 x_ul, _ = unlab_load
 
@@ -252,12 +253,12 @@ if __name__ == "__main__":
     parser.add_argument("--datapath", default="./data/", 
                         type=str, help="Path to the CIFAR-10/100 dataset")
     parser.add_argument('--num-labeled', type=int, 
-                        default=4000, help='Total number of labeled samples')
+                        default=256, help='Total number of labeled samples')
     parser.add_argument("--lr", default=0.1, type=float, 
                         help="The initial learning rate") 
     parser.add_argument("--momentum", default=0.9, type=float,
                         help="Optimizer momentum")
-    parser.add_argument("--wd", default=0.0001, type=float,
+    parser.add_argument("--wd", default=0.001, type=float,
                         help="Weight decay")
     parser.add_argument("--expand-labels", action="store_true", 
                         help="expand labels to fit eval steps")
@@ -265,7 +266,7 @@ if __name__ == "__main__":
                         help='train batchsize')
     parser.add_argument('--test-batch', default=256, type=int,
                         help='train batchsize')
-    parser.add_argument('--total-iter', default=256*256, type=int,
+    parser.add_argument('--total-iter', default=256*128, type=int,
                         help='total number of iterations to run')
     parser.add_argument('--iter-per-epoch', default=256, type=int,
                         help="Number of iterations to run per epoch")
@@ -275,10 +276,12 @@ if __name__ == "__main__":
                         help='Confidence Threshold for pseudo labeling')
     parser.add_argument("--dataout", type=str, default="./path/to/output/",
                         help="Path to save log files")
-    parser.add_argument("--model-depth", type=int, default=28,
+    parser.add_argument("--model-depth", type=int, default=22,
                         help="model depth for wide resnet") 
     parser.add_argument("--model-width", type=int, default=2,
                         help="model width for wide resnet")
+    parser.add_argument("--drop-rate", type=float, default=0.4,
+                        help="model dropout rate")
     parser.add_argument("--use-saved-model", type=bool, default=True,
                         help="Use one of the saved model")
     

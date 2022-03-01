@@ -21,7 +21,7 @@ def x_u_split(args, labels):
         idx = np.random.choice(idx, label_per_class, False)
         labeled_idx.extend(idx)
     labeled_idx = np.array(labeled_idx)
-    assert len(labeled_idx) == args.num_labeled
+    # assert len(labeled_idx) == args.num_labeled
 
     if args.expand_labels or args.num_labeled < args.train_batch:
         num_expand_x = math.ceil(
