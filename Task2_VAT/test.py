@@ -1,9 +1,11 @@
 import torch
+import torch.nn as nn
 from dataloader import get_cifar10, get_cifar100
 from model.wrn import WideResNet
-from utils import accuracy
+from utils import accuracy 
 
-def test_cifar10(testdataset, filepath = "./path/to/model.pth.tar"):
+
+def test_cifar10(testdataset, filepath = "./model_weights_cifar10/last_trained.h5"):
     '''
     args: 
         testdataset : (torch.utils.data.Dataset)
@@ -19,7 +21,16 @@ def test_cifar10(testdataset, filepath = "./path/to/model.pth.tar"):
         function with the testdataset returned by get_cifar10()
     '''
     # TODO: SUPPLY the code for this function
-    raise NotImplementedError
+    model_depth = 28 
+    model_width=2
+    num_classes = 10
+
+    model = WideResNet(model_depth, num_classes, widen_factor=model_width)
+    model.load_state_dict(torch.load(filepath))
+
+    test_preds = model(testdataset)
+    return test_preds.softmax(dim=1)
+
 
 def test_cifar100(testdataset, filepath="./path/to/model.pth.tar"):
     '''
@@ -37,4 +48,12 @@ def test_cifar100(testdataset, filepath="./path/to/model.pth.tar"):
         function with the testdataset returned by get_cifar100()
     '''
     # TODO: SUPPLY the code for this function
-    raise NotImplementedError
+    model_depth = 28 
+    model_width=2
+    num_classes = 10
+
+    model = WideResNet(model_depth, num_classes, widen_factor=model_width)
+    model.load_state_dict(torch.load(filepath))
+
+    test_preds = model(testdataset)
+    return test_preds.softmax(dim=1)

@@ -104,7 +104,7 @@ def main(args):
     ############################################################################
     # TODO: SUPPLY your code
     ############################################################################
-    model_wt_path = Path('model_weights_%s' %(args.dataset))
+    model_wt_path = Path('model_weights_%s_%s' %(args.dataset, args.model_droprate))
     logfilename     = Path(model_wt_path) / Path("log_info.txt")
     model_last_path = Path(model_wt_path) / Path("last_trained.h5")
     model_txt_path  = Path(model_wt_path) / Path("epoch_info.txt")
