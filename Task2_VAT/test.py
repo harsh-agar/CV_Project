@@ -21,14 +21,10 @@ def test_cifar10(testdataset, filepath = "./model_weights_cifar10/last_trained.h
         function with the testdataset returned by get_cifar10()
     '''
     # TODO: SUPPLY the code for this function
-    model_depth = 28 
-    model_width=2
-    num_classes = 10
-
-    model = WideResNet(model_depth, num_classes, widen_factor=model_width)
-    model.load_state_dict(torch.load(filepath))
-
+ 
+    model = model.load_state_dict(torch.load(filepath))
     test_preds = model(testdataset)
+
     return test_preds.softmax(dim=1)
 
 
@@ -48,12 +44,7 @@ def test_cifar100(testdataset, filepath="./path/to/model.pth.tar"):
         function with the testdataset returned by get_cifar100()
     '''
     # TODO: SUPPLY the code for this function
-    model_depth = 28 
-    model_width=2
-    num_classes = 10
-
-    model = WideResNet(model_depth, num_classes, widen_factor=model_width)
-    model.load_state_dict(torch.load(filepath))
-
+    model = model.load_state_dict(torch.load(filepath))
     test_preds = model(testdataset)
+    
     return test_preds.softmax(dim=1)

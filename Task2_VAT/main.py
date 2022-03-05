@@ -6,6 +6,9 @@ import warnings
 import os
 from pathlib import Path
 import re
+import numpy as np
+import warnings
+warnings.filterwarnings("ignore")
 
 from dataloader import get_cifar10, get_cifar100
 from utils      import accuracy, epoch_log
@@ -17,11 +20,9 @@ import torch
 import torch.optim as optim
 from torch.utils.data   import DataLoader
 import torch.nn as nn
-import numpy as np
+from torchvision import utils as tv_utils
+from torch.utils.tensorboard import SummaryWriter
 
-import warnings
-
-warnings.filterwarnings("ignore")
 
 def main(args):
     if args.dataset == "cifar10":
@@ -35,6 +36,7 @@ def main(args):
     args.epoch = math.ceil(args.total_iter / args.iter_per_epoch)
  
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    train_writer = SummaryWriter()
 
     if not os.path.exists(Path(args.datapath) / Path('dataloaders_%s' %(args.dataset))):
         os.makedirs(Path(args.datapath) / Path('dataloaders_%s' %(args.dataset)))
@@ -193,20 +195,24 @@ def main(args):
                 (epoch, accuracies.avg, ce_losses.avg, vat_losses.avg, val_acc.avg, val_loss / val_i))
         print('[epoch = %d] train_accuracy: %.3f ce_loss: %.3f vat_loss: %.3f  val_accuracy: %.3f val_loss: %.3f' %
                 (epoch, accuracies.avg, ce_losses.avg, vat_losses.avg, val_acc.avg, val_loss / val_i))
+
+        train_writer.add_scalar("VAT Loss", vat_losses.avg, epoch)
+        train_writer.add_scalar("Crossentropy Loss", ce_losses.avg, epoch)
+        train_writer.add_scalar("Validation Loss", val_loss / val_i, epoch)
         
         model_wts_path  = Path(model_wt_path) / Path(f"epoch_{epoch}_of_{args.epoch}.h5")
-        
         torch.save(model.state_dict(), model_last_path)
 
         if last_loss > val_loss:
             torch.save(model.state_dict(), model_wts_path)
             best_model = epoch
-
             last_loss = val_loss
 
         with open(model_txt_path, "w+") as f:
             f.write("Best model epoch: %d\n" % (best_model))
             f.write("Last model epoch: %d\n" % (epoch))
+    train_writer.close()
+    torch.save(model.state_dict(), 'model_last_path')
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Virtual adversarial training \
