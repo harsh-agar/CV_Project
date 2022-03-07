@@ -38,8 +38,8 @@ class epoch_log(object):
         self.count += n
         self.avg = self.sum / self.count
 
-class weakaug(x_ul):
-    return x_ul_w
+# class weakaug(x_ul):
+#     return x_ul_w
 
-class  strongaug(x_ul):
-    return x_ul_s
+# class  strongaug(x_ul):
+#     return x_ul_s
