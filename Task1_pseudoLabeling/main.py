@@ -24,7 +24,9 @@ from torch.utils.tensorboard import SummaryWriter
 warnings.filterwarnings("ignore")
 
 def main(args):
-    writer = SummaryWriter()
+
+    # base_path = r'/home/neuralnetworks_team084/Task1_pseudoLabeling/'
+    # os.chdir(base_path)
 
     if args.dataset == "cifar10":
         args.num_classes = 10
@@ -108,6 +110,9 @@ def main(args):
     model_wt_path = Path('model_weights_%s_%s_%.2f' %(args.dataset, args.num_labeled, args.threshold)) 
     model_txt_path  = Path(model_wt_path) / Path("epoch_info.txt" )
     model_last_path = Path(model_wt_path) / Path("last_trained.h5")
+    model_log_path  = Path(model_wt_path) / Path('log_info.txt')
+
+    writer = SummaryWriter(log_dir=Path(model_wt_path)/Path('runs'))
 
     best_loss_val = 9999999999999.9
     start_model = 0
@@ -138,7 +143,6 @@ def main(args):
                 o_ul = o_ul.to('cpu')
                 x_t = torch.cat((x_t, x_ul[torch.where(torch.max(o_ul.softmax(dim=1), axis=1)[0] > args.threshold)[0]]))
                 y_t = torch.cat((y_t, o_ul.softmax(dim=1).max(dim=1)[1][torch.where(torch.max(o_ul.softmax(dim=1), axis=1)[0] > args.threshold)[0]]))
-                w_t = (torch.sigmoid(torch.max(o_ul.softmax(dim=1), axis=1)[0])*2 - 1).detach()
 
         print(x_t.shape[0])
         train_accuracies = epoch_log()
@@ -147,16 +151,11 @@ def main(args):
         for i in tqdm(range(args.iter_per_epoch)):
 
             try:
-                    data_sample = next(labeled_loader)
-                    if len(data_sample) == 2:
-                        x_l, y_l      = data_sample
-                        w_l = torch.ones(x_l.shape[0])
-                    else:
-                        x_l, y_l, w_l = data_sample
-
+                    x_l, y_l = next(labeled_loader)
+                    
             except StopIteration:
                 if x_t.shape[0] > 0:
-                    labeled_loader      = iter(itertools.chain(DataLoader(list(zip(x_t, y_t, w_t)), 
+                    labeled_loader      = iter(itertools.chain(DataLoader(list(zip(x_t, y_t)), 
                                                                           batch_size = args.train_batch, 
                                                                           shuffle = True, 
                                                                           num_workers=args.num_workers),
@@ -170,20 +169,15 @@ def main(args):
                                                           shuffle = True, 
                                                           num_workers=args.num_workers))
 
-                data_sample = next(labeled_loader)
-                if len(data_sample) == 2:
-                    x_l, y_l      = data_sample
-                    w_l = torch.ones(x_l.shape[0])
-                else:
-                    x_l, y_l, w_l = data_sample
-            
-            x_l, y_l, w_l    = x_l.to(device), y_l.to(device), w_l.to(device)
+                x_l, y_l = next(labeled_loader)
+                
+            x_l, y_l    = x_l.to(device), y_l.to(device)
 
             optimizer.zero_grad()
 
             o_l = model(x_l)
             loss = criterion(o_l.softmax(dim=1), y_l)
-            loss = loss * w_l
+            loss = loss 
             loss.mean().backward()
             optimizer.step()
 
@@ -207,6 +201,15 @@ def main(args):
 
             val_accuracies.update(val_acc[0].item(), inputs.shape[0])
         
+        writer.add_scalar('train_loss', running_loss_train / args.iter_per_epoch, epoch)
+        writer.add_scalar('val_loss', val_loss / val_i, epoch)
+        writer.add_scalar('train_accuracy', train_accuracies.avg, epoch)
+        writer.add_scalar('val_accuracy', val_accuracies.avg, epoch)
+
+        with open(model_log_path, 'a+') as f:
+            f.write('[epoch = %d] train_loss: %.3f val_loss: %.3f train_accuracy: %.3f val_accuracy: %.3f\n' %
+                    (epoch, running_loss_train / args.iter_per_epoch, val_loss / val_i, train_accuracies.avg, val_accuracies.avg))
+
         print('[epoch = %d] train_loss: %.3f val_loss: %.3f train_accuracy: %.3f val_accuracy: %.3f' %
                 (epoch, running_loss_train / args.iter_per_epoch, val_loss / val_i, train_accuracies.avg, val_accuracies.avg))
         # train_loss.append(running_loss_train / 2000)
@@ -239,7 +242,7 @@ def main(args):
         #         running_loss_test += loss_test.item()
         #     test_loss.append(running_loss_test/2500)
     
-        
+    writer.close()
             
             ####################################################################
             # TODO: SUPPLY your code
@@ -253,12 +256,12 @@ if __name__ == "__main__":
     parser.add_argument("--datapath", default="./data/", 
                         type=str, help="Path to the CIFAR-10/100 dataset")
     parser.add_argument('--num-labeled', type=int, 
-                        default=256, help='Total number of labeled samples')
-    parser.add_argument("--lr", default=0.1, type=float, 
+                        default=4000, help='Total number of labeled samples')
+    parser.add_argument("--lr", default=0.03, type=float, 
                         help="The initial learning rate") 
     parser.add_argument("--momentum", default=0.9, type=float,
                         help="Optimizer momentum")
-    parser.add_argument("--wd", default=0.001, type=float,
+    parser.add_argument("--wd", default=0.0005, type=float,
                         help="Weight decay")
     parser.add_argument("--expand-labels", action="store_true", 
                         help="expand labels to fit eval steps")
@@ -276,11 +279,11 @@ if __name__ == "__main__":
                         help='Confidence Threshold for pseudo labeling')
     parser.add_argument("--dataout", type=str, default="./path/to/output/",
                         help="Path to save log files")
-    parser.add_argument("--model-depth", type=int, default=22,
+    parser.add_argument("--model-depth", type=int, default=28,
                         help="model depth for wide resnet") 
     parser.add_argument("--model-width", type=int, default=2,
                         help="model width for wide resnet")
-    parser.add_argument("--drop-rate", type=float, default=0.4,
+    parser.add_argument("--drop-rate", type=float, default=0.0,
                         help="model dropout rate")
     parser.add_argument("--use-saved-model", type=bool, default=True,
                         help="Use one of the saved model")
