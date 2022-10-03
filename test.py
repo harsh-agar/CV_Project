@@ -9,8 +9,6 @@ from utils import accuracy
 from torch.utils.data   import DataLoader, ConcatDataset
 
 
-
-
 def main(args):
     if args.dataset == "cifar10":
         args.num_classes = 10
@@ -45,7 +43,6 @@ def test_cifar10(testdataset, filepath = "./model_weights_cifar10/last_trained.h
         with the model file. Assume testdataset is like CIFAR-10. Test this
         function with the testdataset returned by get_cifar10()
     '''
-    # TODO: SUPPLY the code for this function
     model = WideResNet(depth=28, num_classes=10, widen_factor=2)
     model.load_state_dict(torch.load(os.path.abspath(filepath)))
 
@@ -80,7 +77,6 @@ def test_cifar100(testdataset, filepath="./path/to/model.pth.tar"):
         with the model file. Assume testdataset is like CIFAR-100. Test this
         function with the testdataset returned by get_cifar100()
     '''
-    # TODO: SUPPLY the code for this function
     model = model.load_state_dict(torch.load(filepath))
     test_preds = model(testdataset)
     

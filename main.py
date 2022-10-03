@@ -101,9 +101,6 @@ def main(args):
                              args.num_classes, widen_factor=args.model_width, dropRate=args.drop_rate)
     model       = model.to(device)
 
-    ############################################################################
-    # TODO: SUPPLY your code
-    ############################################################################
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.SGD(model.parameters(), lr=args.lr, weight_decay=args.wd, momentum=args.momentum)
 
@@ -212,7 +209,6 @@ def main(args):
 
         print('[epoch = %d] train_loss: %.3f val_loss: %.3f train_accuracy: %.3f val_accuracy: %.3f' %
                 (epoch, running_loss_train / args.iter_per_epoch, val_loss / val_i, train_accuracies.avg, val_accuracies.avg))
-        # train_loss.append(running_loss_train / 2000)
         
         model_last_path = Path(model_wt_path) / Path("last_trained.h5")
         model_wts_path  = Path(model_wt_path) / Path(f"epoch_{epoch}_of_{args.epoch}.h5")
@@ -244,10 +240,6 @@ def main(args):
     
     writer.close()
             
-            ####################################################################
-            # TODO: SUPPLY your code
-            ####################################################################
-
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Pseudo labeling \
                                         of CIFAR10/100 with pytorch")
